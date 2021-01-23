@@ -17,7 +17,9 @@ const exportedContracts = [
   'Bond',
   'Share',
   'Boardroom',
+  'BoardroomLp',
   'Treasury',
+  'LinearThreshold',
   ...distributionPoolContracts(),
 ];
 

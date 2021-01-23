@@ -62,39 +62,14 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 import '../interfaces/IRewardDistributionRecipient.sol';
 
-contract yCRVWrapper {
-    using SafeMath for uint256;
-    using SafeERC20 for IERC20;
+import '../token/LPTokenWrapper.sol';
 
-    IERC20 public ycrv;
-
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
-
-    function totalSupply() public virtual view returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) public virtual view returns (uint256) {
-        return _balances[account];
-    }
-
-    function stake(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-        ycrv.safeTransferFrom(msg.sender, address(this), amount);
-    }
-
-    function withdraw(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        ycrv.safeTransfer(msg.sender, amount);
-    }
-}
-
-contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
-    IERC20 public basisCash;
-    uint256 public DURATION = 5 days;
+contract DAIUNSLPTokenSharePool is
+    LPTokenWrapper,
+    IRewardDistributionRecipient
+{
+    IERC20 public basisShare;
+    uint256 public DURATION = 365 days;
 
     uint256 public starttime;
     uint256 public periodFinish = 0;
@@ -103,7 +78,6 @@ contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
     uint256 public rewardPerTokenStored;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
-    mapping(address => uint256) public deposits;
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
@@ -111,17 +85,20 @@ contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
     event RewardPaid(address indexed user, uint256 reward);
 
     constructor(
-        address basisCash_,
-        address ycrv_,
+        address basisShare_,
+        address lptoken_,
         uint256 starttime_
     ) public {
-        basisCash = IERC20(basisCash_);
-        ycrv = IERC20(ycrv_);
+        basisShare = IERC20(basisShare_);
+        lpt = IERC20(lptoken_);
         starttime = starttime_;
     }
 
     modifier checkStart() {
-        require(block.timestamp >= starttime, 'BACyCRVPool: not start');
+        require(
+            block.timestamp >= starttime,
+            'DAIUNSLPTokenSharePool: not start'
+        );
         _;
     }
 
@@ -168,13 +145,7 @@ contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'BACyCRVPool: Cannot stake 0');
-        uint256 newDeposit = deposits[msg.sender].add(amount);
-        require(
-            newDeposit <= 20000e18,
-            'BACyCRVPool: deposit amount exceeds maximum 20000'
-        );
-        deposits[msg.sender] = newDeposit;
+        require(amount > 0, 'DAIUNSLPTokenSharePool: Cannot stake 0');
         super.stake(amount);
         emit Staked(msg.sender, amount);
     }
@@ -185,8 +156,7 @@ contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'BACyCRVPool: Cannot withdraw 0');
-        deposits[msg.sender] = deposits[msg.sender].sub(amount);
+        require(amount > 0, 'DAIUNSLPTokenSharePool: Cannot withdraw 0');
         super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);
     }
@@ -200,7 +170,7 @@ contract BACyCRVPool is yCRVWrapper, IRewardDistributionRecipient {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            basisCash.safeTransfer(msg.sender, reward);
+            basisShare.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }

@@ -10,12 +10,18 @@ const MockDai = artifacts.require('MockDai');
 
 const Oracle = artifacts.require('Oracle')
 const Boardroom = artifacts.require('Boardroom')
+const BoardroomLp = artifacts.require('BoardroomLp')
 const Treasury = artifacts.require('Treasury')
+const SimpleFund = artifacts.require('SimpleERCFund')
+
+const LinearThreshold = artifacts.require('LinearThreshold');
 
 const UniswapV2Factory = artifacts.require('UniswapV2Factory');
 const UniswapV2Router02 = artifacts.require('UniswapV2Router02');
 
+const HOUR = 60 * 60;
 const DAY = 86400;
+const ORACLE_START_DATE = Date.parse('2021-01-22T16:00:00Z') / 1000;
 
 async function migration(deployer, network, accounts) {
   let uniswap, uniswapRouter;
@@ -31,15 +37,22 @@ async function migration(deployer, network, accounts) {
     uniswapRouter = await UniswapV2Router02.at(knownContracts.UniswapV2Router02[network]);
   }
 
-  const dai = network === 'mainnet'
+  const dai = network === 'mainnet' || network === 'rinkeby'
     ? await IERC20.at(knownContracts.DAI[network])
     : await MockDai.deployed();
-
+  
   // 2. provide liquidity to BAC-DAI and BAS-DAI pair
   // if you don't provide liquidity to BAC-DAI and BAS-DAI pair after step 1 and before step 3,
   //  creating Oracle will fail with NO_RESERVES error.
   const unit = web3.utils.toBN(10 ** 18).toString();
+  const unit6 = web3.utils.toBN(10 ** 6).toString();
   const max = web3.utils.toBN(10 ** 18).muln(10000).toString();
+  const max6 = web3.utils.toBN(10 ** 6).muln(10000).toString();//usdt's decimals is 6
+
+  const MIN_SUPPLY = '0';
+  const MAX_SUPPLY = web3.utils.toBN(10 ** 20).muln(2500000).toString();
+  const MIN_CEILING = web3.utils.toBN(10 ** 16).muln(101).toString();
+  const MAX_CEILING = web3.utils.toBN(10 ** 16).muln(105).toString();
 
   const cash = await Cash.deployed();
   const share = await Share.deployed();
@@ -57,36 +70,85 @@ async function migration(deployer, network, accounts) {
   await uniswapRouter.addLiquidity(
     cash.address, dai.address, unit, unit, unit, unit, accounts[0], deadline(),
   );
+
   await uniswapRouter.addLiquidity(
     share.address, dai.address, unit, unit, unit, unit, accounts[0],  deadline(),
   );
 
-  console.log(`DAI-BAC pair address: ${await uniswap.getPair(dai.address, cash.address)}`);
-  console.log(`DAI-BAS pair address: ${await uniswap.getPair(dai.address, share.address)}`);
+  console.log(`DAI-UNC pair address: ${await uniswap.getPair(dai.address, cash.address)}`);
+  console.log(`DAI-UNS pair address: ${await uniswap.getPair(dai.address, share.address)}`);
+  
+  let startTime = POOL_START_DATE;
+  let bondOraclePeriod = 75;// 1.25 min
+  let seigniorageOraclePeriod = 30 * 60;//30 min = 1.25 * 24
+  let poolStartDate = Date.parse('2021-01-22T16:00:00Z') / 1000;
+  let oracleStartDate = Date.parse('2021-01-22T16:00:00Z') / 1000;
+  let boardroomStartDate = Date.parse('2021-01-25T08:00:00Z') / 1000;//deploy boardroom
+
+  if (network == 'mainnet') {
+    bondOraclePeriod = HOUR / 3;
+    seigniorageOraclePeriod = DAY / 3;
+    oracleStartDate = ORACLE_START_DATE;
+
+    boardroomStartDate = startTime + 64 * HOUR;
+    startTime += 3 * DAY;
+  } else {
+    poolStartDate = deadline();
+    oracleStartDate = poolStartDate;
+    boardroomStartDate = poolStartDate - seigniorageOraclePeriod;
+    startTime = poolStartDate;
+  }
+
+  console.log("baseLaunchDate", poolStartDate * 1000);
+  console.log('bondLaunchesAt', oracleStartDate * 1000);
+  console.log('boardroomLaunchesAt', (boardroomStartDate - 4 * HOUR) * 1000);//UI
 
   // Deploy boardroom
-  await deployer.deploy(Boardroom, cash.address, share.address);
+  await deployer.deploy(Boardroom, cash.address, share.address, boardroomStartDate);
+  // Deploy boardroom for lp
+  const lp = await uniswap.getPair(dai.address, share.address);
+  console.log(`Boardroom DAI-UNS pair address: ${lp}`);
+  await deployer.deploy(BoardroomLp, cash.address, lp, boardroomStartDate)
+  // Deploy simpleFund
+  await deployer.deploy(SimpleFund);
 
   // 2. Deploy oracle for the pair between bac and dai
-  await deployer.deploy(
+  const BondOracle = await deployer.deploy(
     Oracle,
     uniswap.address,
     cash.address,
     dai.address,
+    bondOraclePeriod,
+    oracleStartDate
+  );
+  const SeigniorageOracle = await deployer.deploy(
+    Oracle,
+    uniswap.address,
+    cash.address,
+    dai.address,
+    seigniorageOraclePeriod,
+    oracleStartDate
   );
 
-  let startTime = POOL_START_DATE;
-  if (network === 'mainnet') {
-    startTime += 5 * DAY;
-  }
+  const linearThreshold = await deployer.deploy(
+    LinearThreshold,
+    MIN_SUPPLY,
+    MAX_SUPPLY,
+    MIN_CEILING,
+    MAX_CEILING
+  )
 
   await deployer.deploy(
     Treasury,
     cash.address,
     Bond.address,
     Share.address,
-    Oracle.address,
+    BondOracle.address,
+    SeigniorageOracle.address,
     Boardroom.address,
+    BoardroomLp.address,
+    SimpleFund.address,
+    linearThreshold.address,
     startTime,
   );
 }

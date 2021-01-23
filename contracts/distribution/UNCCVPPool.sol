@@ -62,11 +62,11 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 import '../interfaces/IRewardDistributionRecipient.sol';
 
-contract DAIWrapper {
+contract CVPWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    IERC20 public dai;
+    IERC20 public cvp;
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
@@ -82,19 +82,19 @@ contract DAIWrapper {
     function stake(uint256 amount) public virtual {
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
-        dai.safeTransferFrom(msg.sender, address(this), amount);
+        cvp.safeTransferFrom(msg.sender, address(this), amount);
     }
 
     function withdraw(uint256 amount) public virtual {
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        dai.safeTransfer(msg.sender, amount);
+        cvp.safeTransfer(msg.sender, amount);
     }
 }
 
-contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
+contract UNCCVPPool is CVPWrapper, IRewardDistributionRecipient {
     IERC20 public basisCash;
-    uint256 public DURATION = 5 days;
+    uint256 public DURATION = 3 days;
 
     uint256 public starttime;
     uint256 public periodFinish = 0;
@@ -112,16 +112,16 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
 
     constructor(
         address basisCash_,
-        address dai_,
+        address cvp_,
         uint256 starttime_
     ) public {
         basisCash = IERC20(basisCash_);
-        dai = IERC20(dai_);
+        cvp = IERC20(cvp_);
         starttime = starttime_;
     }
 
     modifier checkStart() {
-        require(block.timestamp >= starttime, 'BACDAIPool: not start');
+        require(block.timestamp >= starttime, 'UNCCVPPool: not start');
         _;
     }
 
@@ -168,11 +168,11 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'BACDAIPool: Cannot stake 0');
+        require(amount > 0, 'UNCCVPPool: Cannot stake 0');
         uint256 newDeposit = deposits[msg.sender].add(amount);
         require(
             newDeposit <= 20000e18,
-            'BACDAIPool: deposit amount exceeds maximum 20000'
+            'UNCCVPPool: deposit amount exceeds maximum 20000'
         );
         deposits[msg.sender] = newDeposit;
         super.stake(amount);
@@ -185,7 +185,7 @@ contract BACDAIPool is DAIWrapper, IRewardDistributionRecipient {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'BACDAIPool: Cannot withdraw 0');
+        require(amount > 0, 'UNCCVPPool: Cannot withdraw 0');
         deposits[msg.sender] = deposits[msg.sender].sub(amount);
         super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);

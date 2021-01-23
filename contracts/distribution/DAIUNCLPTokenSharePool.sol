@@ -62,48 +62,24 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 import '../interfaces/IRewardDistributionRecipient.sol';
 
-contract USDCWrapper {
-    using SafeMath for uint256;
-    using SafeERC20 for IERC20;
+import '../token/LPTokenWrapper.sol';
 
-    IERC20 public usdc;
+contract DAIUNCLPTokenSharePool is
+    LPTokenWrapper,
+    IRewardDistributionRecipient
+{
+    IERC20 public basisShare;
+    uint256 public constant DURATION = 30 days;
 
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
-
-    function totalSupply() public view returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) public view returns (uint256) {
-        return _balances[account];
-    }
-
-    function stake(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-        usdc.safeTransferFrom(msg.sender, address(this), amount);
-    }
-
-    function withdraw(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        usdc.safeTransfer(msg.sender, amount);
-    }
-}
-
-contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
-    IERC20 public basisCash;
-    uint256 public DURATION = 5 days;
-
-    uint256 public starttime;
+    // uint256 public initreward = 18479995 * 10**16; // 184,799.95 Shares
+    uint256 public initreward = 11250000 * 10**16; // 112,500.00 Shares
+    uint256 public starttime; // starttime TBD
     uint256 public periodFinish = 0;
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
-    mapping(address => uint256) public deposits;
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
@@ -111,18 +87,13 @@ contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
     event RewardPaid(address indexed user, uint256 reward);
 
     constructor(
-        address basisCash_,
-        address usdc_,
+        address basisShare_,
+        address lptoken_,
         uint256 starttime_
     ) public {
-        basisCash = IERC20(basisCash_);
-        usdc = IERC20(usdc_);
+        basisShare = IERC20(basisShare_);
+        lpt = IERC20(lptoken_);
         starttime = starttime_;
-    }
-
-    modifier checkStart() {
-        require(block.timestamp >= starttime, 'BACUSDCPool: not start');
-        _;
     }
 
     modifier updateReward(address account) {
@@ -166,15 +137,10 @@ contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
         public
         override
         updateReward(msg.sender)
+        checkhalve
         checkStart
     {
-        require(amount > 0, 'BACUSDCPool: Cannot stake 0');
-        uint256 newDeposit = deposits[msg.sender].add(amount);
-        require(
-            newDeposit <= 20000e6,
-            'BACUSDCPool: deposit amount exceeds maximum 20000'
-        );
-        deposits[msg.sender] = newDeposit;
+        require(amount > 0, 'Cannot stake 0');
         super.stake(amount);
         emit Staked(msg.sender, amount);
     }
@@ -183,10 +149,10 @@ contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
         public
         override
         updateReward(msg.sender)
+        checkhalve
         checkStart
     {
-        require(amount > 0, 'BACUSDCPool: Cannot withdraw 0');
-        deposits[msg.sender] = deposits[msg.sender].sub(amount);
+        require(amount > 0, 'Cannot withdraw 0');
         super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);
     }
@@ -196,13 +162,29 @@ contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
         getReward();
     }
 
-    function getReward() public updateReward(msg.sender) checkStart {
+    function getReward() public updateReward(msg.sender) checkhalve checkStart {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            basisCash.safeTransfer(msg.sender, reward);
+            basisShare.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
+    }
+
+    modifier checkhalve() {
+        if (block.timestamp >= periodFinish) {
+            initreward = initreward.mul(75).div(100);
+
+            rewardRate = initreward.div(DURATION);
+            periodFinish = block.timestamp.add(DURATION);
+            emit RewardAdded(initreward);
+        }
+        _;
+    }
+
+    modifier checkStart() {
+        require(block.timestamp >= starttime, 'not start');
+        _;
     }
 
     function notifyRewardAmount(uint256 reward)
@@ -223,7 +205,7 @@ contract BACUSDCPool is USDCWrapper, IRewardDistributionRecipient {
             periodFinish = block.timestamp.add(DURATION);
             emit RewardAdded(reward);
         } else {
-            rewardRate = reward.div(DURATION);
+            rewardRate = initreward.div(DURATION);
             lastUpdateTime = starttime;
             periodFinish = starttime.add(DURATION);
             emit RewardAdded(reward);

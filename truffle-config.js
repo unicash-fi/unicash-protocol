@@ -18,11 +18,14 @@
  *
  */
 
-// const HDWalletProvider = require('@truffle/hdwallet-provider');
-// const infuraKey = "fj4jll3k.....";
-//
-// const fs = require('fs');
-// const mnemonic = fs.readFileSync(".secret").toString().trim();
+const HDWalletProvider = require('truffle-hdwallet-provider');
+require('dotenv').config()
+
+const fs = require('fs');
+
+const mnemonic = process.env.PRIVATE_KEY;
+const infuraKey = process.env.INFURA_KEY;
+const etherscanKey = process.env.ETHERSCAN_KEY;
 
 module.exports = {
   /**
@@ -60,14 +63,28 @@ module.exports = {
     // },
     // Useful for deploying to a public network.
     // NB: It's important to wrap the provider as a function.
-    // ropsten: {
-    // provider: () => new HDWalletProvider(mnemonic, `https://ropsten.infura.io/v3/YOUR-PROJECT-ID`),
-    // network_id: 3,       // Ropsten's id
-    // gas: 5500000,        // Ropsten has a lower block limit than mainnet
-    // confirmations: 2,    // # of confs to wait between deployments. (default: 0)
-    // timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
-    // skipDryRun: true     // Skip dry run before migrations? (default: false for public nets )
-    // },
+    rinkeby: {
+      //HDWalletProvider.pollingInterval = 25000 ms, default is 4000
+      //truffle.deploymentPollingInterval = 25000 ms, default is 4000
+      provider: () => new HDWalletProvider(mnemonic, `https://rinkeby.infura.io/v3/` + infuraKey),
+      network_id: 4,       // Ropsten's id
+      gas: 8000000,        // Ropsten has a lower block limit than mainnet
+      gasPrice: 30000000000, // 1 gwei
+      confirmations: 0,    // # of confs to wait between deployments. (default: 0)
+      timeoutBlocks: 50000,  // # of blocks before a deployment times out  (minimum/default: 50)
+      deploymentPollingInterval: 25000,
+      skipDryRun: true // Skip dry run before migrations? (default: false for public nets )
+    },
+    mainnet: {
+      provider: () => new HDWalletProvider(mnemonic, `https://mainnet.infura.io/v3/` + infuraKey, 25000),
+      network_id: 1,       // mainnet's id
+      gas: 12000000,        // 
+      gasPrice: 100000000000, // 100 gwei
+      confirmations: 0,    // # of confs to wait between deployments. (default: 0)
+      timeoutBlocks: 200,  // # of blocks before a deployment times out  (minimum/default: 50)
+      deploymentPollingInterval: 25000,
+      skipDryRun: false     // Skip dry run before migrations? (default: false for public nets )
+    },
     // Useful for private networks
     // private: {
     // provider: () => new HDWalletProvider(mnemonic, `https://network.io`),
@@ -86,13 +103,17 @@ module.exports = {
     solc: {
       version: '0.6.12+commit.27d51765', // Fetch exact version from solc-bin (default: truffle's version)
       // docker: true,        // Use "0.5.1" you've installed locally with docker (default: false)
-      // settings: {          // See the solidity docs for advice about optimization and evmVersion
-      //  optimizer: {
-      //    enabled: false,
-      //    runs: 200
-      //  },
+      settings: {          // See the solidity docs for advice about optimization and evmVersion
+       optimizer: {
+         enabled: true,
+         runs: 200
+       },
       //  evmVersion: "byzantium"
-      // }
+      }
     },
+  },
+  plugins: ["truffle-plugin-verify"],
+  api_keys: {
+      etherscan: etherscanKey,
   },
 }

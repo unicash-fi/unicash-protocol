@@ -50,7 +50,7 @@ contract ShareWrapper {
     }
 }
 
-contract Boardroom is ShareWrapper, ContractGuard, Operator {
+contract BoardroomLp is ShareWrapper, ContractGuard, Operator {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
